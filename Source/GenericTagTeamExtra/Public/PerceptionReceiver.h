@@ -45,13 +45,13 @@ struct FPerceptionArray : public FFastArraySerializer
 	{
 		TArray<int> Result;
 		Result.Append(AddedIndices);
-		PerceptionRemoveEvent.Broadcast(Result);
+		PerceptionAddEvent.Broadcast(Result);
 	}
 	void PostReplicatedChange(const TArrayView<int32>& ChangedIndices, int32 FinalSize)
 	{
 		TArray<int> Result;
 		Result.Append(ChangedIndices);
-		PerceptionRemoveEvent.Broadcast(Result);
+		PerceptionChangedEvent.Broadcast(Result);
 	}
 
 	FOnPerceptionChangedEvent PerceptionRemoveEvent;
