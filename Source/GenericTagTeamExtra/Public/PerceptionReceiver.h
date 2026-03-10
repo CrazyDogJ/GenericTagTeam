@@ -31,12 +31,32 @@ struct FPerceptionArray : public FFastArraySerializer
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	TArray<FPerceptionEntry> PerceptionArray;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, NotReplicated)
-	TMap<APawn*, int32> IndexMap;
-
 	void UpdatePerceptionAlpha(APawn* Pawn, const float& PerceptionAlpha);
 
-	// TODO : Implements add or remove delegates
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnPerceptionChangedEvent, const TArray<int>& ChangedIndices)
+	
+	void PreReplicatedRemove(const TArrayView<int32>& RemovedIndices, int32 FinalSize)
+	{
+		TArray<int> Result;
+		Result.Append(RemovedIndices);
+		PerceptionRemoveEvent.Broadcast(Result);
+	}
+	void PostReplicatedAdd(const TArrayView<int32>& AddedIndices, int32 FinalSize)
+	{
+		TArray<int> Result;
+		Result.Append(AddedIndices);
+		PerceptionRemoveEvent.Broadcast(Result);
+	}
+	void PostReplicatedChange(const TArrayView<int32>& ChangedIndices, int32 FinalSize)
+	{
+		TArray<int> Result;
+		Result.Append(ChangedIndices);
+		PerceptionRemoveEvent.Broadcast(Result);
+	}
+
+	FOnPerceptionChangedEvent PerceptionRemoveEvent;
+	FOnPerceptionChangedEvent PerceptionAddEvent;
+	FOnPerceptionChangedEvent PerceptionChangedEvent;
 	
 	// Replication
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParams)
@@ -50,7 +70,7 @@ template<> struct TStructOpsTypeTraits<FPerceptionArray> : public TStructOpsType
 	enum { WithNetDeltaSerializer = true };
 };
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), Blueprintable)
 class GENERICTAGTEAMEXTRA_API UPerceptionReceiver : public UActorComponent
 {
 	GENERATED_BODY()
@@ -66,7 +86,15 @@ public:
 	{
 		PerceptionArray.UpdatePerceptionAlpha(AiPawn, PerceptionAlpha);
 	}
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnPerceptionAdd(const TArray<int>& ArrayIndices);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnPerceptionRemove(const TArray<int>& ArrayIndices);
 	
 protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 };
