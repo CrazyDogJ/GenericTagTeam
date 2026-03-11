@@ -6,6 +6,7 @@
 #include "GenericTagTeamComponent.h"
 #include "PerceptionReceiver.h"
 #include "Perception/AIPerceptionComponent.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 
 UPerceptionManager::UPerceptionManager()
@@ -67,6 +68,20 @@ UPerceptionReceiver* UPerceptionManager::TryGetPerceptionReceiver(const AActor* 
 	return nullptr;
 }
 
+bool UPerceptionManager::HasTag(const AActor* OtherActor) const
+{
+	const auto Source = OtherActor->GetComponentByClass<UAIPerceptionStimuliSourceComponent>();
+	for (const auto Itr : AdditionalTags)
+	{
+		if (Source->ComponentHasTag(Itr))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 float UPerceptionManager::DeltaSub_Implementation(const float& DeltaTime)
 {
 	return DeltaTime * SubMultiplier;
@@ -91,28 +106,22 @@ void UPerceptionManager::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus St
 {
 	TEnumAsByte<ETeamAttitude::Type> Attitude;
 	const auto TagTeamComp = GetPawnTagTeamComponent();
-	if (!TagTeamComp)
+	const auto TagTeamCondition = TagTeamComp && TagTeamComp->GetOtherAttitude(Actor, Attitude) && Attitude == ETeamAttitude::Hostile;
+	if (TagTeamCondition || HasTag(Actor))
 	{
-		return;
-	}
-	
-	if (TagTeamComp->GetOtherAttitude(Actor, Attitude))
-	{
-		if (Attitude == ETeamAttitude::Hostile)
+		// Add
+		if (Stimulus.WasSuccessfullySensed())
 		{
-			if (Stimulus.WasSuccessfullySensed())
-			{
-				PerceptionActors.Add(Actor);
-				PerceptionAlpha.Add(Actor, 0.0f);
-			}
-			else
-			{
-				PerceptionActors.Remove(Actor);
-				if (TrackingActor == Actor)
-				{
-					TrackingActor = nullptr;
-				}
-			}
+			PerceptionActors.Add(Actor);
+			PerceptionAlpha.Add(Actor, 0.0f);
+			return;
+		}
+			
+		// Remove
+		PerceptionActors.Remove(Actor);
+		if (TrackingActor == Actor)
+		{
+			TrackingActor = nullptr;
 		}
 	}
 }

@@ -11,7 +11,7 @@ class UPerceptionReceiver;
 class UGenericTagTeamComponent;
 class UAIPerceptionComponent;
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), Blueprintable)
 class GENERICTAGTEAMEXTRA_API UPerceptionManager : public UActorComponent
 {
 	GENERATED_BODY()
@@ -24,12 +24,18 @@ public:
 	APawn* GetPawn() const;
 	static UPerceptionReceiver* TryGetPerceptionReceiver(const AActor* OtherActor);
 
+	bool HasTag(const AActor* OtherActor) const;
+	
 	UFUNCTION(BlueprintNativeEvent)
 	float DeltaAdd(const float& DeltaTime, const AActor* Other);
 
 	UFUNCTION(BlueprintNativeEvent)
 	float DeltaSub(const float& DeltaTime);
 
+	/** If actor does not contain tag team component, we still percept that actor with specific tags. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	TArray<FName> AdditionalTags;
+	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	float AddMultiplier = 1.0f;
 
