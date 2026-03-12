@@ -32,32 +32,38 @@ public:
 	UFUNCTION(BlueprintNativeEvent)
 	float DeltaSub(const float& DeltaTime);
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Perception|Settings")
+	uint8 bUseForgotten : 1;
+	
 	/** If actor does not contain tag team component, we still percept that actor with specific tags. */
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Perception|Settings")
 	TArray<FName> AdditionalTags;
 	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Perception|Settings")
 	float AddMultiplier = 1.0f;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Perception|Settings")
 	float SubMultiplier = 1.0f;
 	
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
 	UAIPerceptionComponent* AiPerceptionComponent = nullptr;
 	
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
 	TArray<AActor*> PerceptionActors;
 
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
 	TMap<AActor*, float> PerceptionAlpha;
 
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-	AActor* TrackingActor = nullptr;
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
+	TArray<AActor*> TrackingActors;
 	
 protected:
 	UFUNCTION()
 	void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
-
+	
+	UFUNCTION()
+	void OnTargetPerceptionForgotten(AActor* Actor);
+	
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

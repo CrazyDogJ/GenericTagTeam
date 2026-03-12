@@ -9,7 +9,7 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 
-UPerceptionManager::UPerceptionManager()
+UPerceptionManager::UPerceptionManager(): bUseForgotten(false)
 {
 	PrimaryComponentTick.bCanEverTick = true;
 }
@@ -116,18 +116,24 @@ void UPerceptionManager::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus St
 			PerceptionAlpha.Add(Actor, 0.0f);
 			return;
 		}
-			
-		// Remove
+
 		PerceptionActors.Remove(Actor);
-		if (TrackingActor == Actor)
+		
+		if (!bUseForgotten)
 		{
-			TrackingActor = nullptr;
+			// Remove
+			TrackingActors.Remove(Actor);
 		}
 	}
 }
 
+void UPerceptionManager::OnTargetPerceptionForgotten(AActor* Actor)
+{
+	TrackingActors.Remove(Actor);
+}
+
 void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType,
-	FActorComponentTickFunction* ThisTickFunction)
+                                       FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
@@ -151,17 +157,14 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 			Receiver->UpdatePerceptionAlpha(GetPawn(), FMath::Clamp(Itr.Value, 0.0f, 1.0f));
 		}
 		
+		// Manage array.
 		if (Itr.Value == 0.0f)
 		{
 			NeedToRemove.Add(Itr.Key);
 		}
-
-		if (Itr.Value == 1.0f)
+		else if (Itr.Value == 1.0f)
 		{
-			if (!TrackingActor)
-			{
-				TrackingActor = Itr.Key;
-			}
+			TrackingActors.AddUnique(Itr.Key);
 		}
 	}
 
@@ -180,6 +183,10 @@ void UPerceptionManager::BeginPlay()
 	if (AiPerceptionComponent)
 	{
 		AiPerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &ThisClass::OnTargetPerceptionUpdated);
+		if (bUseForgotten)
+		{
+			AiPerceptionComponent->OnTargetPerceptionForgotten.AddDynamic(this, &ThisClass::OnTargetPerceptionForgotten);
+		}
 	}
 }
 
