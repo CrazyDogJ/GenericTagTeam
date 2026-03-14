@@ -5,11 +5,11 @@
 
 #include "GenericTagTeamComponent.h"
 #include "PerceptionReceiver.h"
-#include "Perception/AIPerceptionComponent.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISense_Damage.h"
 
-UPerceptionManager::UPerceptionManager(): bUseForgotten(false)
+UPerceptionManager::UPerceptionManager()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 }
@@ -73,7 +73,7 @@ bool UPerceptionManager::HasTag(const AActor* OtherActor) const
 	const auto Source = OtherActor->GetComponentByClass<UAIPerceptionStimuliSourceComponent>();
 	for (const auto Itr : AdditionalTags)
 	{
-		if (Source->ComponentHasTag(Itr))
+		if (Source && Source->ComponentHasTag(Itr))
 		{
 			return true;
 		}
@@ -102,6 +102,14 @@ float UPerceptionManager::DeltaAdd_Implementation(const float& DeltaTime, const 
 	return DeltaTime;
 }
 
+void UPerceptionManager::ForgetActor(AActor* Actor)
+{
+	if (AiPerceptionComponent)
+	{
+		AiPerceptionComponent->ForgetActor(Actor);
+	}
+}
+
 void UPerceptionManager::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
 	TEnumAsByte<ETeamAttitude::Type> Attitude;
@@ -109,27 +117,34 @@ void UPerceptionManager::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus St
 	const auto TagTeamCondition = TagTeamComp && TagTeamComp->GetOtherAttitude(Actor, Attitude) && Attitude == ETeamAttitude::Hostile;
 	if (TagTeamCondition || HasTag(Actor))
 	{
-		// Add
+		// Add if not exist.
 		if (Stimulus.WasSuccessfullySensed())
 		{
-			PerceptionActors.Add(Actor);
-			PerceptionAlpha.Add(Actor, 0.0f);
-			return;
-		}
-
-		PerceptionActors.Remove(Actor);
-		
-		if (!bUseForgotten)
-		{
-			// Remove
-			TrackingActors.Remove(Actor);
+			if (PerceptionAlpha.Find(Actor) == nullptr)
+			{
+				// If damaged, we immediately find character.
+				if (Stimulus.Type == UAISense::GetSenseID(UAISense_Damage::StaticClass()))
+				{
+					PerceptionAlpha.Add(Actor, 1.0f);
+					UpdateReceiver(auto(Actor, 1.0f));
+				}
+				// Normal state.
+				else
+				{
+					PerceptionAlpha.Add(Actor, 0.0f);
+				}
+			}
 		}
 	}
 }
 
-void UPerceptionManager::OnTargetPerceptionForgotten(AActor* Actor)
+void UPerceptionManager::UpdateReceiver(const TPair<AActor*, float> InPair) const
 {
-	TrackingActors.Remove(Actor);
+	const auto Receiver = TryGetPerceptionReceiver(InPair.Key);
+	if (Receiver && GetPawn())
+	{
+		Receiver->UpdatePerceptionAlpha(GetPawn(), FMath::Clamp(InPair.Value, 0.0f, 1.0f));
+	}
 }
 
 void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType,
@@ -137,39 +152,74 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	TArray<AActor*> NeedToRemove;
-	
-	for (auto& Itr : PerceptionAlpha)
+	TArray<AActor*> PerceptActors;
+	TArray<AActor*> RememberActors;
+	if (AiPerceptionComponent)
 	{
-		if (PerceptionActors.Find(Itr.Key) >= 0)
+		for (FActorPerceptionContainer::TConstIterator DataIt = AiPerceptionComponent->GetPerceptualDataConstIterator(); DataIt; ++DataIt)
 		{
-			Itr.Value = FMath::Clamp(Itr.Value + DeltaAdd(DeltaTime, Itr.Key), 0.0f, 1.0f);
+			if (AActor* Actor = DataIt->Key.ResolveObjectPtr())
+			{
+				if (DataIt->Value.HasAnyCurrentStimulus())
+				{
+					if (const auto Found = PerceptionAlpha.Find(Actor))
+					{
+						PerceptionAlpha.Add(Actor, FMath::Clamp(*Found + DeltaAdd(DeltaTime, Actor), 0.0f, 1.0f));
+						PerceptActors.Add(Actor);
+					}
+				}
+				else
+				{
+					RememberActors.Add(Actor);
+				}
+			}
+		}
+	}
+
+	TArray<AActor*> NeedToRemove;
+	for (auto& AlphaPair : PerceptionAlpha)
+	{
+		if (PerceptActors.Find(AlphaPair.Key) == INDEX_NONE && (AlphaPair.Value != 1.0f || RememberActors.Find(AlphaPair.Key) == INDEX_NONE))
+		{
+			AlphaPair.Value = FMath::Clamp(AlphaPair.Value - DeltaSub(DeltaTime), 0.0f, 1.0f);
+		}
+
+		// Manage array.
+		if (AlphaPair.Value == 0.0f)
+		{
+			NeedToRemove.Add(AlphaPair.Key);
+		}
+		else if (AlphaPair.Value == 1.0f)
+		{
+			// Update tracking info.
+			const auto Info = AiPerceptionComponent->GetActorInfo(*AlphaPair.Key);
+			// Update last velocity.
+			const auto bPercept = Info->HasAnyCurrentStimulus();
+			if (const auto Found = TrackingActors.Find(AlphaPair.Key))
+			{
+				Found->LastLocation = Info->GetLastStimulusLocation();
+				Found->bIsPercept = bPercept;
+				Found->LastVelocity = bPercept ? AlphaPair.Key->GetVelocity() : Found->LastVelocity;
+			}
+			else
+			{
+				TrackingActors.Add(AlphaPair.Key, FPerceptionInfo(Info->GetLastStimulusLocation(), bPercept,
+					bPercept ? AlphaPair.Key->GetVelocity() : FVector::Zero()));
+			}
 		}
 		else
 		{
-			Itr.Value = FMath::Clamp(Itr.Value - DeltaSub(DeltaTime), 0.0f, 1.0f);
-		}
-
-		// Update receiver.
-		const auto Receiver = TryGetPerceptionReceiver(Itr.Key);
-		if (Receiver && GetPawn())
-		{
-			Receiver->UpdatePerceptionAlpha(GetPawn(), FMath::Clamp(Itr.Value, 0.0f, 1.0f));
+			// Remove tracking info.
+			TrackingActors.Remove(AlphaPair.Key);
 		}
 		
-		// Manage array.
-		if (Itr.Value == 0.0f)
-		{
-			NeedToRemove.Add(Itr.Key);
-		}
-		else if (Itr.Value == 1.0f)
-		{
-			TrackingActors.AddUnique(Itr.Key);
-		}
+		// Update receiver.
+		UpdateReceiver(AlphaPair);
 	}
 
 	for (const auto Itr : NeedToRemove)
 	{
+		ForgetActor(Itr);
 		PerceptionAlpha.Remove(Itr);
 	}
 }
@@ -183,10 +233,6 @@ void UPerceptionManager::BeginPlay()
 	if (AiPerceptionComponent)
 	{
 		AiPerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &ThisClass::OnTargetPerceptionUpdated);
-		if (bUseForgotten)
-		{
-			AiPerceptionComponent->OnTargetPerceptionForgotten.AddDynamic(this, &ThisClass::OnTargetPerceptionForgotten);
-		}
 	}
 }
 

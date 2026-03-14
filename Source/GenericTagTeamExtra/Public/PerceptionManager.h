@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Perception/AIPerceptionComponent.h"
 #include "Perception/AIPerceptionTypes.h"
 #include "PerceptionManager.generated.h"
 
@@ -11,11 +12,29 @@ class UPerceptionReceiver;
 class UGenericTagTeamComponent;
 class UAIPerceptionComponent;
 
+USTRUCT(BlueprintType)
+struct FPerceptionInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector LastLocation = FVector::ZeroVector;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	bool bIsPercept = false;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector LastVelocity = FVector::ZeroVector;
+};
+
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), Blueprintable)
 class GENERICTAGTEAMEXTRA_API UPerceptionManager : public UActorComponent
 {
 	GENERATED_BODY()
 
+	typedef TMap<TObjectKey<AActor>, FActorPerceptionInfo> TActorPerceptionContainer;
+	typedef TActorPerceptionContainer FActorPerceptionContainer;
+	
 public:
 	UPerceptionManager();
 
@@ -31,9 +50,6 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent)
 	float DeltaSub(const float& DeltaTime);
-
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Perception|Settings")
-	uint8 bUseForgotten : 1;
 	
 	/** If actor does not contain tag team component, we still percept that actor with specific tags. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Perception|Settings")
@@ -47,22 +63,21 @@ public:
 	
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
 	UAIPerceptionComponent* AiPerceptionComponent = nullptr;
-	
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
-	TArray<AActor*> PerceptionActors;
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
 	TMap<AActor*, float> PerceptionAlpha;
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Perception|State")
-	TArray<AActor*> TrackingActors;
+	TMap<AActor*, FPerceptionInfo> TrackingActors;
+
+	UFUNCTION(BlueprintCallable, Category = "AI")
+	void ForgetActor(AActor* Actor);
 	
 protected:
 	UFUNCTION()
 	void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
-	
-	UFUNCTION()
-	void OnTargetPerceptionForgotten(AActor* Actor);
+
+	void UpdateReceiver(const TPair<AActor*, float> InPair) const;
 	
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void BeginPlay() override;
