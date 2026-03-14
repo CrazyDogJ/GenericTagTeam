@@ -23,3 +23,11 @@ UAISenseConfig* UGenericTagTeamLibrary::GetSenseConfig(const UAIPerceptionCompon
 
 	return nullptr;
 }
+
+void UGenericTagTeamLibrary::ForgetActor(UAIPerceptionComponent* AiPerception, AActor* ForgetActor)
+{
+	if (AiPerception)
+	{
+		AiPerception->ForgetActor(ForgetActor);
+	}
+}

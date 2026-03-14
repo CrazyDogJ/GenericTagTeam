@@ -17,4 +17,7 @@ class GENERICTAGTEAM_API UGenericTagTeamLibrary : public UBlueprintFunctionLibra
 public:
 	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DeterminesOutputType = "ConfigClass"))
 	static UAISenseConfig* GetSenseConfig(const UAIPerceptionComponent* AiPerception, TSubclassOf<UAISenseConfig> ConfigClass);
+
+	UFUNCTION(BlueprintCallable, Category = "AI")
+	static void ForgetActor(UAIPerceptionComponent* AiPerception, AActor* ForgetActor);
 };
