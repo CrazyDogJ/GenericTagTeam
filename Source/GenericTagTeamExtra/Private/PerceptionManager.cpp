@@ -60,7 +60,7 @@ UPerceptionReceiver* UPerceptionManager::TryGetPerceptionReceiver(const AActor* 
 	}
 	
 	const auto Controller = OtherPawn->GetController();
-	if (Controller->IsPlayerController())
+	if (Controller && Controller->IsPlayerController())
 	{
 		return Cast<UPerceptionReceiver>(Controller->GetComponentByClass(UPerceptionReceiver::StaticClass()));
 	}
@@ -135,6 +135,10 @@ void UPerceptionManager::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus St
 				}
 			}
 		}
+	}
+	else
+	{
+		ForgetActor(Actor);
 	}
 }
 
@@ -244,4 +248,13 @@ void UPerceptionManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		AiPerceptionComponent->OnTargetPerceptionUpdated.RemoveAll(this);
 	}
+
+	for (const auto Itr : PerceptionAlpha)
+	{
+		UpdateReceiver({Itr.Key, Itr.Value});
+		ForgetActor(Itr.Key);
+	}
+
+	PerceptionAlpha.Empty();
+	TrackingActors.Empty();
 }
