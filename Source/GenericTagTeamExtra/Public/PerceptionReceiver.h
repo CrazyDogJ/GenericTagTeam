@@ -31,27 +31,44 @@ struct FPerceptionArray : public FFastArraySerializer
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	TArray<FPerceptionEntry> PerceptionArray;
 
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, NotReplicated)
+	TMap<APawn*, float> PerceptionMap;
+
+	float GetPerception(const APawn* AiPawn);
+	void RemovePerception(APawn* AiPawn);
 	void UpdatePerceptionAlpha(APawn* Pawn, const float& PerceptionAlpha);
 
-	DECLARE_MULTICAST_DELEGATE_OneParam(FOnPerceptionChangedEvent, const TArray<int>& ChangedIndices)
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnPerceptionChangedEvent, const TArray<APawn*>& ChangedIndices)
 	
 	void PreReplicatedRemove(const TArrayView<int32>& RemovedIndices, int32 FinalSize)
 	{
-		TArray<int> Result;
-		Result.Append(RemovedIndices);
-		PerceptionRemoveEvent.Broadcast(Result);
+		TArray<APawn*> Pawns;
+		for (const auto Itr : RemovedIndices)
+		{
+			PerceptionMap.Remove(PerceptionArray[Itr].AiPawn);
+			Pawns.Add(PerceptionArray[Itr].AiPawn);
+		}
+		PerceptionRemoveEvent.Broadcast(Pawns);
 	}
 	void PostReplicatedAdd(const TArrayView<int32>& AddedIndices, int32 FinalSize)
 	{
-		TArray<int> Result;
-		Result.Append(AddedIndices);
-		PerceptionAddEvent.Broadcast(Result);
+		TArray<APawn*> Pawns;
+		for (const auto Itr : AddedIndices)
+		{
+			PerceptionMap.Add(PerceptionArray[Itr].AiPawn, PerceptionArray[Itr].PerceptionAlpha);
+			Pawns.Add(PerceptionArray[Itr].AiPawn);
+		}
+		PerceptionAddEvent.Broadcast(Pawns);
 	}
 	void PostReplicatedChange(const TArrayView<int32>& ChangedIndices, int32 FinalSize)
 	{
-		TArray<int> Result;
-		Result.Append(ChangedIndices);
-		PerceptionChangedEvent.Broadcast(Result);
+		TArray<APawn*> Pawns;
+		for (const auto Itr : ChangedIndices)
+		{
+			PerceptionMap.Add(PerceptionArray[Itr].AiPawn, PerceptionArray[Itr].PerceptionAlpha);
+			Pawns.Add(PerceptionArray[Itr].AiPawn);
+		}
+		PerceptionChangedEvent.Broadcast(Pawns);
 	}
 
 	FOnPerceptionChangedEvent PerceptionRemoveEvent;
@@ -81,6 +98,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Replicated)
 	FPerceptionArray PerceptionArray;
 
+	UFUNCTION(BlueprintPure)
+	float GetPerceptionAlpha(const APawn* AiPawn, bool& bSuccess);
+	
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly)
+	void RemovePerception(APawn* AiPawn)
+	{
+		PerceptionArray.RemovePerception(AiPawn);
+	}
+	
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly)
 	void UpdatePerceptionAlpha(APawn* AiPawn, float PerceptionAlpha)
 	{
@@ -88,10 +114,10 @@ public:
 	}
 
 	UFUNCTION(BlueprintImplementableEvent)
-	void OnPerceptionAdd(const TArray<int>& ArrayIndices);
+	void OnPerceptionAdd(const TArray<APawn*>& ArrayIndices);
 
 	UFUNCTION(BlueprintImplementableEvent)
-	void OnPerceptionRemove(const TArray<int>& ArrayIndices);
+	void OnPerceptionRemove(const TArray<APawn*>& ArrayIndices);
 	
 protected:
 	virtual void BeginPlay() override;

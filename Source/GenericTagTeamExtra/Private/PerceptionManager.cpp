@@ -3,6 +3,7 @@
 
 #include "PerceptionManager.h"
 
+#include "AIController.h"
 #include "GenericTagTeamComponent.h"
 #include "PerceptionReceiver.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
@@ -34,6 +35,11 @@ UGenericTagTeamComponent* UPerceptionManager::GetPawnTagTeamComponent() const
 	}
 
 	return nullptr;
+}
+
+AAIController* UPerceptionManager::GetOwnerAiController() const
+{
+	return Cast<AAIController>(GetOwner());
 }
 
 APawn* UPerceptionManager::GetPawn() const
@@ -151,6 +157,18 @@ void UPerceptionManager::UpdateReceiver(const TPair<AActor*, float> InPair) cons
 	}
 }
 
+void UPerceptionManager::ClearReceiver(APawn* Pawn)
+{
+	for (const auto Itr : PerceptionAlpha)
+	{
+		if (const auto Receiver = TryGetPerceptionReceiver(Itr.Key))
+		{
+			Receiver->RemovePerception(Pawn);
+		}
+		ForgetActor(Itr.Key);
+	}
+}
+
 void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType,
                                        FActorComponentTickFunction* ThisTickFunction)
 {
@@ -228,10 +246,23 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 	}
 }
 
+void UPerceptionManager::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
+{
+	if (OldPawn && !NewPawn)
+	{
+		ClearReceiver(OldPawn);
+	}
+}
+
 void UPerceptionManager::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (const auto Controller = GetOwnerAiController())
+	{
+		Controller->OnPossessedPawnChanged.AddDynamic(this, &ThisClass::OnPossessedPawnChanged);
+	}
+	
 	AiPerceptionComponent = GetOwnerPerceptionComponent();
 	
 	if (AiPerceptionComponent)
@@ -244,15 +275,14 @@ void UPerceptionManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
+	if (const auto Controller = GetOwnerAiController())
+	{
+		Controller->OnPossessedPawnChanged.RemoveAll(this);
+	}
+	
 	if (AiPerceptionComponent)
 	{
 		AiPerceptionComponent->OnTargetPerceptionUpdated.RemoveAll(this);
-	}
-
-	for (const auto Itr : PerceptionAlpha)
-	{
-		UpdateReceiver({Itr.Key, Itr.Value});
-		ForgetActor(Itr.Key);
 	}
 
 	PerceptionAlpha.Empty();

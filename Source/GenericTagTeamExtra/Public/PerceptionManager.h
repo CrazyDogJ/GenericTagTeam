@@ -40,6 +40,7 @@ public:
 
 	UAIPerceptionComponent* GetOwnerPerceptionComponent() const;
 	UGenericTagTeamComponent* GetPawnTagTeamComponent() const;
+	AAIController* GetOwnerAiController() const;
 	APawn* GetPawn() const;
 	static UPerceptionReceiver* TryGetPerceptionReceiver(const AActor* OtherActor);
 
@@ -78,8 +79,14 @@ protected:
 	void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
 
 	void UpdateReceiver(const TPair<AActor*, float> InPair) const;
+
+	void ClearReceiver(APawn* Pawn);
 	
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	
+	UFUNCTION()
+	void OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
+	
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 };

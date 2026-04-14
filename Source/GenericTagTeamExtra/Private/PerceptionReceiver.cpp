@@ -5,6 +5,33 @@
 
 #include "Net/UnrealNetwork.h"
 
+float FPerceptionArray::GetPerception(const APawn* AiPawn)
+{
+	if (const auto Found = PerceptionMap.Find(AiPawn))
+	{
+		return *Found;
+	}
+
+	return -1.0f;
+}
+
+void FPerceptionArray::RemovePerception(APawn* AiPawn)
+{
+	const auto Found = PerceptionArray.IndexOfByPredicate([AiPawn](const FPerceptionEntry& In)
+	{
+		return In.AiPawn == AiPawn;
+	});
+
+	PerceptionMap.Remove(AiPawn);
+	
+	if (Found >= 0)
+	{
+		PerceptionRemoveEvent.Broadcast({AiPawn});
+		PerceptionArray.RemoveAt(Found);
+		MarkArrayDirty();
+	}
+}
+
 void FPerceptionArray::UpdatePerceptionAlpha(APawn* Pawn, const float& PerceptionAlpha)
 {
 	const auto Found = PerceptionArray.IndexOfByPredicate([Pawn](const FPerceptionEntry& In)
@@ -17,16 +44,18 @@ void FPerceptionArray::UpdatePerceptionAlpha(APawn* Pawn, const float& Perceptio
 		auto& Entry = PerceptionArray[Found];
 		if (Entry.PerceptionAlpha != PerceptionAlpha)
 		{
-			if (PerceptionAlpha <= 0.0f)
+			if (PerceptionAlpha <= 0.0f || Pawn->IsActorBeingDestroyed())
 			{
-				PerceptionRemoveEvent.Broadcast({Found});
+				PerceptionMap.Remove(Pawn);
+				PerceptionRemoveEvent.Broadcast({Pawn});
 				PerceptionArray.RemoveAt(Found);
 				MarkArrayDirty();
 				return;
 			}
 			
 			Entry.PerceptionAlpha = PerceptionAlpha;
-			PerceptionChangedEvent.Broadcast({Found});
+			PerceptionMap.Add(Pawn, PerceptionAlpha);
+			PerceptionChangedEvent.Broadcast({Pawn});
 			MarkItemDirty(Entry);
 			return;
 		}
@@ -35,7 +64,8 @@ void FPerceptionArray::UpdatePerceptionAlpha(APawn* Pawn, const float& Perceptio
 	}
 
 	const auto NewIndex = PerceptionArray.Add(FPerceptionEntry(Pawn, PerceptionAlpha));
-	PerceptionAddEvent.Broadcast({NewIndex});
+	PerceptionMap.Add(Pawn, PerceptionAlpha);
+	PerceptionAddEvent.Broadcast({Pawn});
 	MarkItemDirty(PerceptionArray[NewIndex]);
 }
 
@@ -43,6 +73,18 @@ UPerceptionReceiver::UPerceptionReceiver()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+}
+
+float UPerceptionReceiver::GetPerceptionAlpha(const APawn* AiPawn, bool& bSuccess)
+{
+	if (const auto Found = PerceptionArray.PerceptionMap.Find(AiPawn))
+	{
+		bSuccess = true;
+		return *Found;
+	}
+
+	bSuccess = false;
+	return -1.0f;
 }
 
 void UPerceptionReceiver::BeginPlay()
