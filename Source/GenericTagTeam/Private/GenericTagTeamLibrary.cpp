@@ -14,7 +14,8 @@ UAISenseConfig* UGenericTagTeamLibrary::GetSenseConfig(const UAIPerceptionCompon
 		for (auto Index = AiPerception->GetSensesConfigIterator(); Index; ++Index)
 		{
 			auto SenseConfig = *Index;
-			if (SenseConfig->GetClass() == ConfigClass)
+			// 修复：感知配置数组允许空条目。
+			if (SenseConfig && SenseConfig->GetClass() == ConfigClass)
 			{
 				return SenseConfig;
 			}

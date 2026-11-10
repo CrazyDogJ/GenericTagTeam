@@ -13,6 +13,8 @@ UGenericTagTeamComponent::UGenericTagTeamComponent()
 
 UGenericTagTeamComponent* UGenericTagTeamComponent::GetOtherComponent(const AActor* Other) const
 {
+	// 修复：蓝图可能传入空目标或已销毁的 Actor。
+	if (!IsValid(Other)) return nullptr;
 	if (const auto Direct = Other->GetComponentByClass(StaticClass()))
 	{
 		UGenericTagTeamComponent* Result = Cast<UGenericTagTeamComponent>(Direct);
@@ -51,8 +53,11 @@ bool UGenericTagTeamComponent::GetOtherAttitude(const AActor* Other, TEnumAsByte
 		return false;
 	}
 	
-	const auto Subsystem = Other->GetWorld()->GetGameInstance()->GetSubsystem<UGenericTagTeamSubsystem>();
-	if (const auto Comp = GetOtherComponent(Other))
+	// 修复：编辑器或世界退出期间可能没有 GameInstance。
+	const auto World = Other->GetWorld();
+	const auto Subsystem = UGameInstance::GetSubsystem<UGenericTagTeamSubsystem>(World ? World->GetGameInstance() : nullptr);
+	const auto Comp = GetOtherComponent(Other);
+	if (Subsystem && Comp)
 	{
 		OutAttitude = Subsystem->GetTeamAttitudeByTag(TeamTag, Comp->TeamTag);
 		return true;

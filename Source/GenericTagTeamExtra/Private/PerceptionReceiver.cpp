@@ -26,14 +26,21 @@ void FPerceptionArray::RemovePerception(APawn* AiPawn)
 	
 	if (Found >= 0)
 	{
-		PerceptionRemoveEvent.Broadcast({AiPawn});
+		// 修复：回调可能再次修改感知数组，先完成删除再通知。
 		PerceptionArray.RemoveAt(Found);
 		MarkArrayDirty();
+		PerceptionRemoveEvent.Broadcast({AiPawn});
 	}
 }
 
 void FPerceptionArray::UpdatePerceptionAlpha(APawn* Pawn, const float& PerceptionAlpha)
 {
+	// 修复：目标已销毁或感知衰减到零时，仅清理已有条目。
+	if (!IsValid(Pawn) || Pawn->IsActorBeingDestroyed() || PerceptionAlpha <= 0.0f)
+	{
+		RemovePerception(Pawn);
+		return;
+	}
 	const auto Found = PerceptionArray.IndexOfByPredicate([Pawn](const FPerceptionEntry& In)
 	{
 		return In.AiPawn == Pawn;
@@ -44,19 +51,10 @@ void FPerceptionArray::UpdatePerceptionAlpha(APawn* Pawn, const float& Perceptio
 		auto& Entry = PerceptionArray[Found];
 		if (Entry.PerceptionAlpha != PerceptionAlpha)
 		{
-			if (PerceptionAlpha <= 0.0f || Pawn->IsActorBeingDestroyed())
-			{
-				PerceptionMap.Remove(Pawn);
-				PerceptionRemoveEvent.Broadcast({Pawn});
-				PerceptionArray.RemoveAt(Found);
-				MarkArrayDirty();
-				return;
-			}
-			
 			Entry.PerceptionAlpha = PerceptionAlpha;
 			PerceptionMap.Add(Pawn, PerceptionAlpha);
-			PerceptionChangedEvent.Broadcast({Pawn});
 			MarkItemDirty(Entry);
+			PerceptionChangedEvent.Broadcast({Pawn});
 			return;
 		}
 		
@@ -65,8 +63,8 @@ void FPerceptionArray::UpdatePerceptionAlpha(APawn* Pawn, const float& Perceptio
 
 	const auto NewIndex = PerceptionArray.Add(FPerceptionEntry(Pawn, PerceptionAlpha));
 	PerceptionMap.Add(Pawn, PerceptionAlpha);
-	PerceptionAddEvent.Broadcast({Pawn});
 	MarkItemDirty(PerceptionArray[NewIndex]);
+	PerceptionAddEvent.Broadcast({Pawn});
 }
 
 UPerceptionReceiver::UPerceptionReceiver()

@@ -76,6 +76,8 @@ UPerceptionReceiver* UPerceptionManager::TryGetPerceptionReceiver(const AActor* 
 
 bool UPerceptionManager::HasTag(const AActor* OtherActor) const
 {
+	// 修复：感知更新可能与目标销毁发生在同一帧。
+	if (!IsValid(OtherActor)) return false;
 	const auto Source = OtherActor->GetComponentByClass<UAIPerceptionStimuliSourceComponent>();
 	for (const auto Itr : AdditionalTags)
 	{
@@ -110,7 +112,7 @@ float UPerceptionManager::DeltaAdd_Implementation(const float& DeltaTime, const 
 
 void UPerceptionManager::ForgetActor(AActor* Actor)
 {
-	if (AiPerceptionComponent)
+	if (IsValid(AiPerceptionComponent) && IsValid(Actor))
 	{
 		AiPerceptionComponent->ForgetActor(Actor);
 	}
@@ -159,7 +161,8 @@ void UPerceptionManager::UpdateReceiver(const TPair<AActor*, float> InPair) cons
 
 void UPerceptionManager::ClearReceiver(APawn* Pawn)
 {
-	for (const auto Itr : PerceptionAlpha)
+	const auto Targets = PerceptionAlpha;
+	for (const auto Itr : Targets)
 	{
 		if (const auto Receiver = TryGetPerceptionReceiver(Itr.Key))
 		{
@@ -184,11 +187,7 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 			{
 				if (DataIt->Value.HasAnyCurrentStimulus())
 				{
-					if (const auto Found = PerceptionAlpha.Find(Actor))
-					{
-						PerceptionAlpha.Add(Actor, FMath::Clamp(*Found + DeltaAdd(DeltaTime, Actor), 0.0f, 1.0f));
-						PerceptActors.Add(Actor);
-					}
+					if (PerceptionAlpha.Contains(Actor)) PerceptActors.Add(Actor);
 				}
 				else
 				{
@@ -198,12 +197,30 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 		}
 	}
 
-	TArray<AActor*> NeedToRemove;
-	for (auto& AlphaPair : PerceptionAlpha)
+	// 修复：DeltaAdd、DeltaSub 和接收端通知可执行蓝图，不跨回调保存容器迭代器或值引用。
+	for (auto* Actor : PerceptActors)
 	{
+		if (!IsValid(Actor)) continue;
+		const float Delta = DeltaAdd(DeltaTime, Actor);
+		if (auto* Alpha = PerceptionAlpha.Find(Actor)) *Alpha = FMath::Clamp(*Alpha + Delta, 0.0f, 1.0f);
+	}
+
+	TArray<AActor*> NeedToRemove;
+	const auto Targets = PerceptionAlpha;
+	for (auto AlphaPair : Targets)
+	{
+		// 修复：感知系统可能先于跟踪表遗忘目标。
+		if (!IsValid(AlphaPair.Key))
+		{
+			NeedToRemove.Add(AlphaPair.Key);
+			continue;
+		}
 		if (PerceptActors.Find(AlphaPair.Key) == INDEX_NONE && (AlphaPair.Value != 1.0f || RememberActors.Find(AlphaPair.Key) == INDEX_NONE))
 		{
-			AlphaPair.Value = FMath::Clamp(AlphaPair.Value - DeltaSub(DeltaTime), 0.0f, 1.0f);
+			const float Delta = DeltaSub(DeltaTime);
+			auto* Current = PerceptionAlpha.Find(AlphaPair.Key);
+			if (!Current || !IsValid(AlphaPair.Key)) continue;
+			AlphaPair.Value = *Current = FMath::Clamp(*Current - Delta, 0.0f, 1.0f);
 		}
 
 		// Manage array.
@@ -214,7 +231,13 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 		else if (AlphaPair.Value == 1.0f)
 		{
 			// Update tracking info.
-			const auto Info = AiPerceptionComponent->GetActorInfo(*AlphaPair.Key);
+			const auto Info = IsValid(AiPerceptionComponent) ? AiPerceptionComponent->GetActorInfo(*AlphaPair.Key) : nullptr;
+			if (!Info)
+			{
+				NeedToRemove.Add(AlphaPair.Key);
+				UpdateReceiver({AlphaPair.Key, 0.0f});
+				continue;
+			}
 			// Update last velocity.
 			const auto bPercept = Info->HasAnyCurrentStimulus();
 			if (const auto Found = TrackingActors.Find(AlphaPair.Key))
@@ -243,12 +266,13 @@ void UPerceptionManager::TickComponent(float DeltaTime, enum ELevelTick TickType
 	{
 		ForgetActor(Itr);
 		PerceptionAlpha.Remove(Itr);
+		TrackingActors.Remove(Itr);
 	}
 }
 
 void UPerceptionManager::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 {
-	if (OldPawn && !NewPawn)
+	if (OldPawn && OldPawn != NewPawn)
 	{
 		ClearReceiver(OldPawn);
 	}
@@ -285,6 +309,8 @@ void UPerceptionManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AiPerceptionComponent->OnTargetPerceptionUpdated.RemoveAll(this);
 	}
 
+	// 修复：感知管理器被单独移除时，也清理接收端仍引用的 AI。
+	if (auto* Pawn = GetPawn()) ClearReceiver(Pawn);
 	PerceptionAlpha.Empty();
 	TrackingActors.Empty();
 }
